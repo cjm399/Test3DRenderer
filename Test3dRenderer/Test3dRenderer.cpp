@@ -7,6 +7,7 @@
 #include <strstream>
 #include <iostream>
 #include <time.h>
+#include <thread>
 #include <vector>
 
 #define MAX_LOADSTRING 100
@@ -111,6 +112,7 @@ global_variable win32_offscreen_buffer GlobalBackBuffer;
 global_variable bool GlobalRunning;
 global_variable time_t GlobalStartTime;
 global_variable float GlobalDeltaTime;
+global_variable Vector3 camera;
 
 // Forward declarations of functions included in this code module:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -124,6 +126,113 @@ internal void Win32CopyBufferToWindow(HDC deviceContext,
 	win32_offscreen_buffer *buffer);
 
 internal void DrawMesh(Mesh _mesh, win32_offscreen_buffer *buffer);
+internal void DrawTriangleFromMesh(Triangle& tri, mat4x4 &matRotZ, mat4x4 &matRotX, win32_offscreen_buffer* buffer)
+{
+	auto MultiplyMatrixVector = [](Vector3 &input, Vector3 &output, mat4x4 &m)
+	{
+		output.x = input.x * m.m[0][0] + input.y * m.m[1][0] + input.z * m.m[2][0] + m.m[3][0];
+		output.y = input.x * m.m[0][1] + input.y * m.m[1][1] + input.z * m.m[2][1] + m.m[3][1];
+		output.z = input.x * m.m[0][2] + input.y * m.m[1][2] + input.z * m.m[2][2] + m.m[3][2];
+		float w = input.x * m.m[0][3] + input.y * m.m[1][3] + input.z * m.m[2][3] + m.m[3][3];
+
+		if (w != 0)
+		{
+			output.x /= w;
+			output.y /= w;
+			output.z /= w;
+		}
+	};
+
+	auto DrawTriangle = [](Pair p1, Pair p2, Pair p3, uint32_t color = 0xFF0000)
+	{
+		auto DrawLine = [](Pair p1, Pair p2, uint32_t color = 0xFF0000)
+		{
+			//y = mx+b
+			float fSlope = 1;
+			if (p1.x - p2.x != 0)
+				fSlope = ((float)(p1.y - p2.y)) / ((float)(p1.x - p2.x));
+			float b = (-fSlope * p1.x) + p1.y;
+
+			int minX = min(p1.x, p2.x);
+			int minY = min(p1.y, p2.y);
+			int maxX = max(p1.x, p2.x);
+			int maxY = max(p1.y, p2.y);
+
+			uint8_t *row = (uint8_t *)GlobalBackBuffer.memory;
+			int bytesPerPixel = sizeof(uint32_t);
+			std::vector<Pair> pixelCoords;
+
+			for (int x = minX; x <= maxX; ++x)
+			{
+				int y = fSlope * x + b;
+
+				int pixelIndex = (GlobalBackBuffer.pitch*y) + (bytesPerPixel*x);
+				uint32_t *pixelLocation = (uint32_t *)(row + pixelIndex);
+				*pixelLocation = color;
+			}
+		};
+		DrawLine(p1, p2, color);
+		DrawLine(p2, p3, color);
+		DrawLine(p3, p1, color);
+	};
+
+	Triangle triProjected, triTranslated, triRotatedZ, triRotatedZX;
+
+	MultiplyMatrixVector(tri.points[0], triRotatedZ.points[0], matRotZ);
+	MultiplyMatrixVector(tri.points[1], triRotatedZ.points[1], matRotZ);
+	MultiplyMatrixVector(tri.points[2], triRotatedZ.points[2], matRotZ);
+
+	MultiplyMatrixVector(triRotatedZ.points[0], triRotatedZX.points[0], matRotX);
+	MultiplyMatrixVector(triRotatedZ.points[1], triRotatedZX.points[1], matRotX);
+	MultiplyMatrixVector(triRotatedZ.points[2], triRotatedZX.points[2], matRotX);
+
+	triTranslated = triRotatedZX;
+	triTranslated.points[0].z = triRotatedZX.points[0].z + 8.0f;
+	triTranslated.points[1].z = triRotatedZX.points[1].z + 8.0f;
+	triTranslated.points[2].z = triRotatedZX.points[2].z + 8.0f;
+
+
+	Vector3 normal, line1, line2;
+	line1.x = triTranslated.points[1].x - triTranslated.points[0].x;
+	line1.y = triTranslated.points[1].y - triTranslated.points[0].y;
+	line1.z = triTranslated.points[1].z - triTranslated.points[0].z;
+
+	line2.x = triTranslated.points[2].x - triTranslated.points[0].x;
+	line2.y = triTranslated.points[2].y - triTranslated.points[0].y;
+	line2.z = triTranslated.points[2].z - triTranslated.points[0].z;
+
+	normal.x = line1.y * line2.z - line1.z * line2.y;
+	normal.y = line1.z * line2.x - line1.x * line2.z;
+	normal.z = line1.x * line2.y - line1.y * line2.x;
+	float l = sqrtf(normal.x*normal.x + normal.y*normal.y + normal.z*normal.z);
+	normal.x /= l; normal.y /= l; normal.z /= l;
+	float fDot = 
+		normal.x*(triTranslated.points[0].x -camera.x) +
+		normal.y* (triTranslated.points[0].y - camera.y) + 
+		normal.z* (triTranslated.points[0].z - camera.z);
+
+	MultiplyMatrixVector(triTranslated.points[0], triProjected.points[0], matProj);
+	MultiplyMatrixVector(triTranslated.points[1], triProjected.points[1], matProj);
+	MultiplyMatrixVector(triTranslated.points[2], triProjected.points[2], matProj);
+
+	//Scale into view
+	triProjected.points[0].x += 1.0f; triProjected.points[0].y += 1.0f;
+	triProjected.points[1].x += 1.0f; triProjected.points[1].y += 1.0f;
+	triProjected.points[2].x += 1.0f; triProjected.points[2].y += 1.0f;
+
+	triProjected.points[0].x *= .5f *buffer->width;
+	triProjected.points[0].y *= .5f *buffer->height;
+	triProjected.points[1].x *= .5f *buffer->width;
+	triProjected.points[1].y *= .5f *buffer->height;
+	triProjected.points[2].x *= .5f *buffer->width;
+	triProjected.points[2].y *= .5f *buffer->height;
+
+	Pair p1{ triProjected.points[0].x, triProjected.points[0].y };
+	Pair p2{ triProjected.points[1].x, triProjected.points[1].y };
+	Pair p3{ triProjected.points[2].x, triProjected.points[2].y };
+
+	DrawTriangle(p1, p2, p3, 0xFF0000);
+}
 
 internal void FillScreen(uint32_t color = 0x000000)
 {
@@ -164,39 +273,6 @@ internal void DrawLine(Pair p1, Pair p2, uint32_t color = 0xFF0000)
 		uint32_t *pixelLocation = (uint32_t *)(row + pixelIndex);
 		*pixelLocation = color;
 	}
-
-
-	/*for (auto coord : pixelCoords)
-	{
-		int pixelIndex = (GlobalBackBuffer.pitch*coord.y) + (bytesPerPixel*coord.x);
-		uint32_t *pixelLocation = (uint32_t *)(row + pixelIndex);
-		*pixelLocation = color;
-	}*/
-
-	/*uint8_t *row = (uint8_t *)GlobalBackBuffer.memory;
-	for (int Y = 0; Y < GlobalBackBuffer.height; Y++)
-	{
-		uint32_t *pixel = (uint32_t *)row;
-		for (int X = 0; X < GlobalBackBuffer.width; X++)
-		{
-			Pair tempCoord{ X,Y };
-			for (auto coord : pixelCoords)
-			{
-				if (tempCoord.x == coord.x && tempCoord.y == coord.y)
-				{
-					*pixel = color;
-					break;
-				}
-			}
-			/*if (*pixel != color)
-			{
-				*pixel = 0xFFFFFF;
-			}
-			//*pixel = color;
-			*pixel++;
-		}
-		row += GlobalBackBuffer.pitch;
-	}*/
 }
 
 internal void DrawTriangle(Pair p1, Pair p2, Pair p3, uint32_t color = 0xFF0000)
@@ -206,7 +282,7 @@ internal void DrawTriangle(Pair p1, Pair p2, Pair p3, uint32_t color = 0xFF0000)
 	DrawLine(p3, p1, color);
 }
 
-void MultiplyMatrixVector(Vector3 &input, Vector3 &output, mat4x4 &m)
+internal void MultiplyMatrixVector(Vector3 &input, Vector3 &output, mat4x4 &m)
 {
 	output.x = input.x * m.m[0][0] + input.y * m.m[1][0] + input.z * m.m[2][0] + m.m[3][0];
 	output.y = input.x * m.m[0][1] + input.y * m.m[1][1] + input.z * m.m[2][1] + m.m[3][1];
@@ -299,10 +375,26 @@ internal void DrawMesh(Mesh _mesh, win32_offscreen_buffer *buffer)
 	matRotX.m[2][2] = cosf(fTheta * .5f);
 	matRotX.m[3][3] = 1;
 
+	int sizeOfTriangleVector = testMesh.triangles.size();
+	std::thread **threads = new std::thread*[sizeOfTriangleVector];
 	//Draw Triangles
-	for (auto tri : testMesh.triangles)
+	for (int i = 0; i < testMesh.triangles.size(); ++i)
 	{
-		Triangle triProjected, triTranslated, triRotatedZ, triRotatedZX;
+		threads[i] = new std::thread(DrawTriangleFromMesh, std::ref(testMesh.triangles[i]), std::ref(matRotX), std::ref(matRotZ), buffer);
+	}
+
+	for (int i = 0; i < sizeOfTriangleVector; ++i)
+	{
+		threads[i]->join();
+	}
+	
+	for (int i = 0; i < sizeOfTriangleVector; ++i)
+	{
+		delete threads[i];
+	}
+	delete[] threads;
+
+	/*	Triangle triProjected, triTranslated, triRotatedZ, triRotatedZX;
 
 		MultiplyMatrixVector(tri.points[0], triRotatedZ.points[0], matRotZ);
 		MultiplyMatrixVector(tri.points[1], triRotatedZ.points[1], matRotZ);
@@ -338,7 +430,7 @@ internal void DrawMesh(Mesh _mesh, win32_offscreen_buffer *buffer)
 		Pair p3{ triProjected.points[2].x, triProjected.points[2].y };
 
 		DrawTriangle(p1, p2, p3, 0xFF0000);
-	}
+	}*/
 }
 
 /*int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
@@ -413,13 +505,8 @@ int WINAPI WinMain(HINSTANCE instance,
 
 				while (PeekMessage(&message, window, 0, 0, PM_REMOVE))
 				{
-					if (message.message == WM_QUIT)
-					{
-						GlobalRunning = false;
-					}
 					TranslateMessage(&message);
 					DispatchMessageA(&message);
-
 				}
 
 				//Redraw the screen black!
@@ -432,10 +519,11 @@ int WINAPI WinMain(HINSTANCE instance,
 				//WindowGradient(&GlobalBackBuffer, xOffset, yOffset);
 				if (xOffset >= 1278) xOffset = 0;
 				if (yOffset >= 718) yOffset = 0;
-
-				xOffset += 2;
+				
+				xOffset += 1;
 				yOffset += 1;
 				win32_window_dimension dimensions = Win32GetWindowDimension(window);
+				
 				Win32CopyBufferToWindow(deviceContext,
 					dimensions.width, dimensions.height,
 					&GlobalBackBuffer);

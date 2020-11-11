@@ -1,9 +1,11 @@
 ﻿  Test3dRenderer.cpp
-d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(160): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
-d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(335): warning C4838: conversion from 'float' to 'int' requires a narrowing conversion
-d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(335): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
-d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(336): warning C4838: conversion from 'float' to 'int' requires a narrowing conversion
-d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(336): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
-d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(337): warning C4838: conversion from 'float' to 'int' requires a narrowing conversion
-d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(337): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(167): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(230): warning C4838: conversion from 'float' to 'int' requires a narrowing conversion
+d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(230): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(231): warning C4838: conversion from 'float' to 'int' requires a narrowing conversion
+d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(231): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(232): warning C4838: conversion from 'float' to 'int' requires a narrowing conversion
+d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(232): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(270): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+d:\documents\visual studio 2017\test3drenderer\test3drenderer\test3drenderer.cpp(378): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
   Test3dRenderer.vcxproj -> D:\Documents\Visual Studio 2017\Test3dRenderer\x64\Debug\Test3dRenderer.exe
