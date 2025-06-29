@@ -1,7 +1,6 @@
 // Test3dRenderer.cpp : Defines the entry point for the application.
 //
 
-#include "framework.h"
 #include "Test3dRenderer.h"
 #include <fstream>
 #include <strstream>
