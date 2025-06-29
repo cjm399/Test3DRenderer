@@ -134,21 +134,17 @@ global_variable LARGE_INTEGER frequency;
 global_variable LARGE_INTEGER GameStartTime;
 global_variable float DeltaTime;
 
-// Forward declarations of functions included in this code module:
-ATOM                MyRegisterClass(HINSTANCE hInstance);
-BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
-INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
-
-
 internal void Win32CopyBufferToWindow(HDC deviceContext,
 	int windowWidth, int windowHeight,
 	win32_offscreen_buffer *buffer);
-
 internal void DrawMesh(Mesh *_mesh, win32_offscreen_buffer *buffer);
 internal void MultiplyMatrixVector(Vector3& input, Vector3& output, mat4x4& m);
 internal void DrawLine(Pair *p1, Pair *p2, uint32_t color = 0xFF0000);
 internal void DrawTriangle(Pair *p1, Pair *p2, Pair *p3, uint32_t color = 0xFF0000);
+
+
+
 
 internal inline double DiffTimeMS(LARGE_INTEGER _start, LARGE_INTEGER _end)
 {
@@ -199,13 +195,13 @@ internal void DrawTriangleFromMesh(Triangle& tri, mat4x4 &matRotX, mat4x4 &matRo
 		normal.y* (triTranslated.points[0].y - camera.y) + 
 		normal.z* (triTranslated.points[0].z - camera.z);
 	
-	char buff[1024];
-	sprintf_s(buff, "fDot %f\n", fDot);
-	OutputDebugStringA(buff);
+	//char buff[1024];
+	//sprintf_s(buff, "fDot %f\n", fDot);
+	//OutputDebugStringA(buff);
 	int triColor = 0xFF0000;
-	if (fDot >= 0.0f)
-		triColor = 0x0000FF;
-	triColor = ((int)(fDot*2.0) + 255);
+	//if (fDot >= 0.0f)
+	//	triColor = 0x0000FF;
+	//triColor = ((int)(fDot*2.0) + 255);
 	if (true || fDot < 0.0f)
 	{
 		MultiplyMatrixVector(triTranslated.points[0], triProjected.points[0], matProj);
@@ -457,7 +453,7 @@ int WINAPI WinMain(HINSTANCE instance,
 	WNDCLASSEXA windowClass = {};
 
 	//win32_window_dimension dimensions = Win32GetWindowDimension(window);
-	Win32ResizeDIBSection(&GlobalBackBuffer, 1280, 720);
+	Win32ResizeDIBSection(&GlobalBackBuffer, 1920, 1080);
 
 	windowClass.cbSize = sizeof(WNDCLASSEX);
 	windowClass.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
@@ -473,7 +469,7 @@ int WINAPI WinMain(HINSTANCE instance,
 		HWND window = CreateWindowExA(
 			0,
 			"RendererWindowClass",
-			"10",
+			"Test 3D Renderer",
 			WS_OVERLAPPEDWINDOW | WS_VISIBLE,
 			CW_USEDEFAULT,
 			CW_USEDEFAULT,
@@ -645,61 +641,6 @@ int WINAPI WinMain(HINSTANCE instance,
 }
 
 
-
-//
-//  FUNCTION: MyRegisterClass()
-//
-//  PURPOSE: Registers the window class.
-//
-ATOM MyRegisterClass(HINSTANCE hInstance)
-{
-    WNDCLASSEXW wcex;
-
-    wcex.cbSize = sizeof(WNDCLASSEX);
-
-    wcex.style          = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc    = WndProc;
-    wcex.cbClsExtra     = 0;
-    wcex.cbWndExtra     = 0;
-    wcex.hInstance      = hInstance;
-    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_TEST3DRENDERER));
-    wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
-    wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_TEST3DRENDERER);
-    wcex.lpszClassName  = szWindowClass;
-    wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
-
-    return RegisterClassExW(&wcex);
-}
-
-//
-//   FUNCTION: InitInstance(HINSTANCE, int)
-//
-//   PURPOSE: Saves instance handle and creates main window
-//
-//   COMMENTS:
-//
-//        In this function, we save the instance handle in a global variable and
-//        create and display the main program window.
-//
-BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
-{
-   hInst = hInstance; // Store instance handle in our global variable
-
-   HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
-
-   if (!hWnd)
-   {
-      return FALSE;
-   }
-
-   ShowWindow(hWnd, nCmdShow);
-   UpdateWindow(hWnd);
-
-   return TRUE;
-}
-
 internal void 
 Win32CopyBufferToWindow(HDC deviceContext,
 	int windowWidth, int windowHeight,
@@ -751,24 +692,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			break;
 		}
 		break;
-
-    case WM_COMMAND:
-        {
-            int wmId = LOWORD(wParam);
-            // Parse the menu selections:
-            switch (wmId)
-            {
-            case IDM_ABOUT:
-                DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-                break;
-            case IDM_EXIT:
-                DestroyWindow(hWnd);
-                break;
-            default:
-                return DefWindowProc(hWnd, message, wParam, lParam);
-            }
-        }
-        break;
     case WM_PAINT:
         {
             PAINTSTRUCT ps;
@@ -794,24 +717,4 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
     return 0;
-}
-
-// Message handler for about box.
-INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    UNREFERENCED_PARAMETER(lParam);
-    switch (message)
-    {
-    case WM_INITDIALOG:
-        return (INT_PTR)TRUE;
-
-    case WM_COMMAND:
-        if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
-        {
-            EndDialog(hDlg, LOWORD(wParam));
-            return (INT_PTR)TRUE;
-        }
-        break;
-    }
-    return (INT_PTR)FALSE;
 }
