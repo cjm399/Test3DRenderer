@@ -57,16 +57,65 @@ struct mat4x4
 	float m[4][4] = { 0 };
 };
 
+inline mat4x4 MakeIdentity()
+{
+	mat4x4 m = {};
+	m.m[0][0] = 1;
+	m.m[1][1] = 1;
+	m.m[2][2] = 1;
+	m.m[3][3] = 1;
+	return m;
+}
+
+inline mat4x4 MakeRotationZ(float angle)
+{
+	mat4x4 m = MakeIdentity();
+	float c = cosf(angle);
+	float s = sinf(angle);
+
+	m.m[0][0] = c;
+	m.m[0][1] = s;
+	m.m[1][0] = -s;
+	m.m[1][1] = c;
+	return m;
+}
+
+inline mat4x4 MakeRotationX(float angle)
+{
+	mat4x4 m = MakeIdentity();
+	float c = cosf(angle);
+	float s = sinf(angle);
+
+	m.m[1][1] = c;
+	m.m[1][2] = s;
+	m.m[2][1] = -s;
+	m.m[2][2] = c;
+	return m;
+}
+
+inline mat4x4 Multiply(const mat4x4& a, const mat4x4& b)
+{
+	mat4x4 r = {};
+
+	for (int c = 0; c < 4; c++)
+		for (int r2 = 0; r2 < 4; r2++)
+			r.m[r2][c] =
+			a.m[r2][0] * b.m[0][c] +
+			a.m[r2][1] * b.m[1][c] +
+			a.m[r2][2] * b.m[2][c] +
+			a.m[r2][3] * b.m[3][c];
+
+	return r;
+}
+
 struct Mesh
 {
-	mat4x4 matRotZ;
-	mat4x4 matRotX;
-	std::vector<Triangle> triangles;
+	std::vector<Vector3> positions;
+	std::vector<Triangle> triangles; //TODO:Delete and swap to positions and indicies only
+	std::vector<uint32_t> indicies;
 
 	bool LoadMeshFromFile(std::string sFileName)
 	{
-		matRotZ = {};
-		matRotX = {};
 		std::ifstream myFile(sFileName);
 		if (!myFile.is_open())
 		{
@@ -107,27 +156,76 @@ struct Mesh
 	}
 };
 
+struct Renderer {
+	win32_offscreen_buffer* backbuffer;
+	mat4x4 view;
+	mat4x4 proj;
+	Vector3 cameraPosition;
+};
+
+enum RenderCommandType
+{
+	RenderCommand_Clear,
+	RenderCommand_Mesh,
+};
+
+struct RenderCommandHeader
+{
+	RenderCommandType type;
+};
+
+struct RenderCommandClear {
+	RenderCommandHeader header;
+	uint32_t color;
+};
+
+struct RenderCommandMesh {
+	RenderCommandHeader header;
+	Mesh* mesh;
+	mat4x4 model;
+};
+
+struct RenderCommandBuffer
+{
+	uint8_t* data;
+	uint32_t size;
+	uint32_t capaity;
+};
+
+void PushClear(RenderCommandBuffer* _buffer, uint32_t _color)
+{
+	RenderCommandClear* cmd = (RenderCommandClear*)(_buffer->data + _buffer->size);
+	cmd->header.type = RenderCommand_Clear;
+	cmd->color = _color;
+
+	_buffer->size += sizeof(*cmd); // TODO: each struct should know how big they are from the get-go.
+	//NOTE(chris): Do I want them different sizes?
+}
+
+void PushMesh(RenderCommandBuffer* _buffer, Mesh* _mesh, mat4x4 _model)
+{
+	RenderCommandMesh* cmd = (RenderCommandMesh*)(_buffer->data + _buffer->size);
+	cmd->header.type = RenderCommand_Mesh;
+	cmd->mesh = _mesh;
+	cmd->model = _model;
+
+	_buffer->size += sizeof(*cmd);
+}
+
+struct input_state {
+	bool keys[256];
+};
 
 // Global Variables:
 HINSTANCE hInst;                                // current instance
 WCHAR szTitle[MAX_LOADSTRING];                  // The title bar text
 WCHAR szWindowClass[MAX_LOADSTRING];            // the main window class name
 
-global_variable win32_offscreen_buffer GlobalBackBuffer;
 global_variable bool GlobalRunning;
 global_variable float GameRunTime;
-global_variable Vector3 camera = {0, 0, -8.0f};
-global_variable uint32_t renderThreadCount;
-global_variable std::thread** threads;
 global_variable Pair** preAllocatedPairs;
-global_variable mat4x4 matProj;
-global_variable mat4x4 matView;
-
-global_variable std::mutex frameMutex;
-global_variable std::condition_variable frameCond;
-global_variable std::atomic<bool>* threadGoFlags;
-global_variable std::atomic<bool>* threadDoneFlags;
-global_variable bool rendering = true;
+global_variable input_state InputState;
+global_variable input_state PreviousInputState;
 
 global_variable LARGE_INTEGER frequency;
 global_variable LARGE_INTEGER GameStartTime;
@@ -136,21 +234,26 @@ global_variable float DeltaTime;
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 internal void Win32CopyBufferToWindow(HDC deviceContext,
 	int windowWidth, int windowHeight,
-	win32_offscreen_buffer *buffer);
-internal void DrawMesh(Mesh *_mesh, win32_offscreen_buffer *buffer);
+	Renderer *renderContext);
+
+internal void DrawMesh(Renderer *renderContext, Mesh* _mesh, mat4x4 _model);
 internal void MultiplyMatrixVector(Vector3& input, Vector3& output, mat4x4& m);
-internal void DrawLine(Pair *p1, Pair *p2, uint32_t color = 0xFF0000);
-internal void DrawTriangle(Pair *p1, Pair *p2, Pair *p3, uint32_t color = 0xFF0000);
+internal void DrawLine(Renderer* renderContext, Pair *p1, Pair *p2, uint32_t color = 0xFF0000);
+internal void DrawTriangle(Renderer* renderContext, Pair *p1, Pair *p2, Pair *p3, uint32_t color = 0xFF0000);
 
 
-
-
-internal inline double DiffTimeMS(LARGE_INTEGER _start, LARGE_INTEGER _end)
+internal inline float DiffTimeMS(LARGE_INTEGER _start, LARGE_INTEGER _end)
 {
-	return 1000.0 * (float)(_end.QuadPart - _start.QuadPart) / (float)frequency.QuadPart;
+	return 1000.0f * (float)(_end.QuadPart - _start.QuadPart) / (float)frequency.QuadPart;
 }
 
-internal void DrawTriangleFromMesh(Triangle& tri, mat4x4 &matRotX, mat4x4 &matRotZ, win32_offscreen_buffer* buffer, int threadContext)
+internal void DrawTriangleFromMesh(
+	Renderer* renderContext, 
+	Triangle& tri, 
+	mat4x4 &matRotX, 
+	mat4x4 &matRotZ, 
+	int threadContext
+)
 {
 	Triangle triProjected, triTranslated, triRotatedZ, triRotatedZX;
 
@@ -162,9 +265,9 @@ internal void DrawTriangleFromMesh(Triangle& tri, mat4x4 &matRotX, mat4x4 &matRo
 	MultiplyMatrixVector(triRotatedZ.points[1], triRotatedZX.points[1], matRotX);
 	MultiplyMatrixVector(triRotatedZ.points[2], triRotatedZX.points[2], matRotX);
 
-	MultiplyMatrixVector(triRotatedZX.points[0], triTranslated.points[0], matView);
-	MultiplyMatrixVector(triRotatedZX.points[1], triTranslated.points[1], matView);
-	MultiplyMatrixVector(triRotatedZX.points[2], triTranslated.points[2], matView);
+	MultiplyMatrixVector(triRotatedZX.points[0], triTranslated.points[0], renderContext->view);
+	MultiplyMatrixVector(triRotatedZX.points[1], triTranslated.points[1], renderContext->view);
+	MultiplyMatrixVector(triRotatedZX.points[2], triTranslated.points[2], renderContext->view);
 
 	if (triTranslated.points[0].z <= 0.1f ||
 		triTranslated.points[1].z <= 0.1f ||
@@ -190,9 +293,9 @@ internal void DrawTriangleFromMesh(Triangle& tri, mat4x4 &matRotX, mat4x4 &matRo
 	float l = sqrtf(normal.x*normal.x + normal.y*normal.y + normal.z*normal.z);
 	normal.x /= l; normal.y /= l; normal.z /= l;
 	fDot =
-		normal.x*(triTranslated.points[0].x -camera.x) +
-		normal.y* (triTranslated.points[0].y - camera.y) + 
-		normal.z* (triTranslated.points[0].z - camera.z);
+		normal.x*(triTranslated.points[0].x - renderContext->cameraPosition.x) +
+		normal.y* (triTranslated.points[0].y - renderContext->cameraPosition.y) +
+		normal.z* (triTranslated.points[0].z - renderContext->cameraPosition.z);
 	
 	//char buff[1024];
 	//sprintf_s(buff, "fDot %f\n", fDot);
@@ -203,21 +306,21 @@ internal void DrawTriangleFromMesh(Triangle& tri, mat4x4 &matRotX, mat4x4 &matRo
 	//triColor = ((int)(fDot*2.0) + 255);
 	if (true || fDot < 0.0f)
 	{
-		MultiplyMatrixVector(triTranslated.points[0], triProjected.points[0], matProj);
-		MultiplyMatrixVector(triTranslated.points[1], triProjected.points[1], matProj);
-		MultiplyMatrixVector(triTranslated.points[2], triProjected.points[2], matProj);
+		MultiplyMatrixVector(triTranslated.points[0], triProjected.points[0], renderContext->proj);
+		MultiplyMatrixVector(triTranslated.points[1], triProjected.points[1], renderContext->proj);
+		MultiplyMatrixVector(triTranslated.points[2], triProjected.points[2], renderContext->proj);
 
 		//Scale into view
 		triProjected.points[0].x += 1.0f; triProjected.points[0].y += 1.0f;
 		triProjected.points[1].x += 1.0f; triProjected.points[1].y += 1.0f;
 		triProjected.points[2].x += 1.0f; triProjected.points[2].y += 1.0f;
 
-		triProjected.points[0].x *= .5f * buffer->width;
-		triProjected.points[0].y *= .5f * buffer->height;
-		triProjected.points[1].x *= .5f * buffer->width;
-		triProjected.points[1].y *= .5f * buffer->height;
-		triProjected.points[2].x *= .5f * buffer->width;
-		triProjected.points[2].y *= .5f * buffer->height;
+		triProjected.points[0].x *= .5f * renderContext->backbuffer->width;
+		triProjected.points[0].y *= .5f * renderContext->backbuffer->height;
+		triProjected.points[1].x *= .5f * renderContext->backbuffer->width;
+		triProjected.points[1].y *= .5f * renderContext->backbuffer->height;
+		triProjected.points[2].x *= .5f * renderContext->backbuffer->width;
+		triProjected.points[2].y *= .5f * renderContext->backbuffer->height;
 
 		Pair* p1 = preAllocatedPairs[(threadContext * 3) + 0];
 		Pair* p2 = preAllocatedPairs[(threadContext * 3) + 1];
@@ -232,25 +335,25 @@ internal void DrawTriangleFromMesh(Triangle& tri, mat4x4 &matRotX, mat4x4 &matRo
 		p3->x = triProjected.points[2].x;
 		p3->y = triProjected.points[2].y;
 
-		DrawTriangle(p1, p2, p3, triColor);
+		DrawTriangle(renderContext, p1, p2, p3, triColor);
 	}
 }
 
-internal void FillScreen(uint32_t color = 0x000000)
+internal void FillScreen(Renderer* renderContext, uint32_t color = 0x000000)
 {
-	uint8_t *row = (uint8_t *)GlobalBackBuffer.memory;
-	for (int Y = 0; Y < GlobalBackBuffer.height; Y++)
+	uint8_t *row = (uint8_t *)renderContext->backbuffer->memory;
+	for (int Y = 0; Y < renderContext->backbuffer->height; Y++)
 	{
 		uint32_t *pixel = (uint32_t *)row;
-		for (int X = 0; X < GlobalBackBuffer.width; X++)
+		for (int X = 0; X < renderContext->backbuffer->width; X++)
 		{
 			*pixel++ = color;
 		}
-		row += GlobalBackBuffer.pitch;
+		row += renderContext->backbuffer->pitch;
 	}
 }
 
-internal void DrawLine(Pair* p0, Pair* p1, uint32_t color)
+internal void DrawLine(Renderer* renderContext, Pair* p0, Pair* p1, uint32_t color)
 {
 	int x0 = p0->x, y0 = p0->y;
 	int x1 = p1->x, y1 = p1->y;
@@ -263,15 +366,15 @@ internal void DrawLine(Pair* p0, Pair* p1, uint32_t color)
 
 	int err = dx - dy;
 
-	uint8_t* row = (uint8_t*)GlobalBackBuffer.memory;
+	uint8_t* row = (uint8_t*)renderContext->backbuffer->memory;
 	int bytesPerPixel = sizeof(uint32_t);
 
 	while (true)
 	{
 		// Clamp to screen bounds (skip if out-of-bounds)
-		if (x0 >= 0 && x0 < GlobalBackBuffer.width && y0 >= 0 && y0 < GlobalBackBuffer.height)
+		if (x0 >= 0 && x0 < renderContext->backbuffer->width && y0 >= 0 && y0 < renderContext->backbuffer->height)
 		{
-			int pixelIndex = y0 * GlobalBackBuffer.pitch + x0 * bytesPerPixel;
+			int pixelIndex = y0 * renderContext->backbuffer->pitch + x0 * bytesPerPixel;
 			uint32_t* pixelLocation = (uint32_t*)(row + pixelIndex);
 			*pixelLocation = color;
 		}
@@ -285,42 +388,11 @@ internal void DrawLine(Pair* p0, Pair* p1, uint32_t color)
 	}
 }
 
-/*internal void DrawLine(Pair* p1, Pair* p2, uint32_t color)
+internal inline void DrawTriangle(Renderer* renderContext, Pair *p1, Pair *p2, Pair *p3, uint32_t color)
 {
-	//y = mx+b
-	if (p1 ->x >= 0 && p1->x < GlobalBackBuffer.width && p1->y >= 0 && p1->y < GlobalBackBuffer.height &&
-		p2->x >= 0 && p2->x < GlobalBackBuffer.width && p2->y >= 0 && p2->y < GlobalBackBuffer.height)
-	{
-		float fSlope = 1;
-		if(p1->x-p2->x != 0)
-			fSlope = ((float)(p1->y - p2->y)) / ((float)(p1->x - p2->x));
-		float b = (-fSlope * p1->x) + p1->y;
-
-		int minX = min(p1->x, p2->x);
-		int minY = min(p1->y, p2->y);
-		int maxX = max(p1->x, p2->x);
-		int maxY = max(p1->y, p2->y);
-
-		uint8_t *row = (uint8_t *)GlobalBackBuffer.memory;
-		int bytesPerPixel = sizeof(uint32_t);
-		std::vector<Pair> pixelCoords;
-
-		for (int x = minX; x <= maxX; ++x)
-		{
-			int y = fSlope * x + b;
-
-			int pixelIndex = (GlobalBackBuffer.pitch*y) + (bytesPerPixel*x);
-			uint32_t *pixelLocation = (uint32_t *)(row + pixelIndex);
-			*pixelLocation = color;
-		}
-	}
-}*/
-
-internal inline void DrawTriangle(Pair *p1, Pair *p2, Pair *p3, uint32_t color)
-{
-	DrawLine(p1, p2, color);
-	DrawLine(p2, p3, color);
-	DrawLine(p3, p1, color);
+	DrawLine(renderContext, p1, p2, color);
+	DrawLine(renderContext, p2, p3, color);
+	DrawLine(renderContext, p3, p1, color);
 }
 
 internal inline void MultiplyMatrixVector(Vector3 &input, Vector3 &output, mat4x4 &m)
@@ -352,28 +424,28 @@ Win32GetWindowDimension(HWND window)
 }
 
 internal void
-Win32ResizeDIBSection(win32_offscreen_buffer *buffer,
+Win32ResizeDIBSection(Renderer *renderContext,
 	int _width, int _height)
 {
-	buffer->height = _height;
-	buffer->width = _width;
+	renderContext->backbuffer->height = _height;
+	renderContext->backbuffer->width = _width;
 	int bytesPerPixel = 4;
 
-	if (buffer->memory)
+	if (renderContext->backbuffer->memory)
 	{
-		VirtualFree(buffer->memory, 0, MEM_RELEASE);
+		VirtualFree(renderContext->backbuffer->memory, 0, MEM_RELEASE);
 	}
 
-	buffer->Info.bmiHeader.biSize = sizeof(buffer->Info.bmiHeader);
-	buffer->Info.bmiHeader.biWidth = _width;
-	buffer->Info.bmiHeader.biHeight = -_height;
-	buffer->Info.bmiHeader.biPlanes = 1;
-	buffer->Info.bmiHeader.biBitCount = 32;
-	buffer->Info.bmiHeader.biCompression = BI_RGB;
+	renderContext->backbuffer->Info.bmiHeader.biSize = sizeof(renderContext->backbuffer->Info.bmiHeader);
+	renderContext->backbuffer->Info.bmiHeader.biWidth = _width;
+	renderContext->backbuffer->Info.bmiHeader.biHeight = -_height;
+	renderContext->backbuffer->Info.bmiHeader.biPlanes = 1;
+	renderContext->backbuffer->Info.bmiHeader.biBitCount = 32;
+	renderContext->backbuffer->Info.bmiHeader.biCompression = BI_RGB;
 
 	SIZE_T bufferSize = bytesPerPixel * (_width * _height);
-	buffer->memory = VirtualAlloc(0, bufferSize, MEM_COMMIT, PAGE_READWRITE);
-	buffer->pitch = _width * bytesPerPixel;
+	renderContext->backbuffer->memory = VirtualAlloc(0, bufferSize, MEM_COMMIT, PAGE_READWRITE);
+	renderContext->backbuffer->pitch = _width * bytesPerPixel;
 }
 
 
@@ -394,49 +466,40 @@ internal void WindowGradient(win32_offscreen_buffer *buffer, uint8_t xOffset, ui
 	}
 }
 
-internal void DrawMesh(Mesh *_mesh, win32_offscreen_buffer *buffer)
+internal void DrawMesh(Renderer* _renderContext, Mesh *_mesh, mat4x4 _model)
 {
-	local_persist float fTheta = 0;
-	local_persist float rotateSpeed = (1.0f / 4.0f);
-	
-	fTheta += rotateSpeed * DeltaTime;
 
-	// Rotation matrices
-	_mesh->matRotZ.m[0][0] = cosf(fTheta);
-	_mesh->matRotZ.m[0][1] = sinf(fTheta);
-	_mesh->matRotZ.m[1][0] = -sinf(fTheta);
-	_mesh->matRotZ.m[1][1] = cosf(fTheta);
-	_mesh->matRotZ.m[2][2] = 1;
-	_mesh->matRotZ.m[3][3] = 1;
-
-	_mesh->matRotX.m[0][0] = 1;
-	_mesh->matRotX.m[1][1] = cosf(fTheta * 0.5f);
-	_mesh->matRotX.m[1][2] = sinf(fTheta * 0.5f);
-	_mesh->matRotX.m[2][1] = -sinf(fTheta * 0.5f);
-	_mesh->matRotX.m[2][2] = cosf(fTheta * 0.5f);
-	_mesh->matRotX.m[3][3] = 1;
-
+	for (int i = 0; i < _mesh->triangles.size(); ++i)
 	{
-		std::unique_lock<std::mutex> lock(frameMutex);
-		for (int i = 0; i < renderThreadCount; ++i)
-		{
-			threadGoFlags[i] = true;
-			threadDoneFlags[i] = false;
-		}
+		DrawTriangleFromMesh(_renderContext, _mesh->triangles[i], _model, _model, 0);
 	}
-	frameCond.notify_all();
+}
 
-	// Wait for all threads to finish
-	bool allDone = false;
-	while (!allDone)
+
+void Renderer_Execute(
+	Renderer* _renderer,
+	RenderCommandBuffer* _buffer)
+{
+	uint8_t* loc = _buffer->data;
+
+	while (loc < _buffer->data + _buffer->size)
 	{
-		allDone = true;
-		for (int i = 0; i < renderThreadCount; ++i)
+		RenderCommandHeader* header = (RenderCommandHeader*)loc;
+
+		switch (header->type)
 		{
-			if (!threadDoneFlags[i]) {
-				allDone = false;
-				break;
-			}
+			case RenderCommand_Clear:
+			{
+				RenderCommandClear* cmd = (RenderCommandClear*)loc;
+				FillScreen(_renderer, cmd->color);
+				loc += sizeof(*cmd);
+			} break;
+			case RenderCommand_Mesh:
+			{
+				RenderCommandMesh* cmd = (RenderCommandMesh*)loc;
+				DrawMesh(_renderer, cmd->mesh, cmd->model);
+				loc += sizeof(*cmd);
+			} break;
 		}
 	}
 }
@@ -447,12 +510,22 @@ int WINAPI WinMain(HINSTANCE instance,
 	int showCode)
 
 {
+	Renderer renderContext = Renderer{};
+	RenderCommandBuffer renderCommandBuffer = RenderCommandBuffer{};
+	renderCommandBuffer.data = (uint8_t*) malloc((1024 * 1024));
+	renderCommandBuffer.capaity = 1024 * 1024;
+	renderContext.backbuffer = new win32_offscreen_buffer();
+	renderContext.cameraPosition = { 0, 0, -8.0f };
+
+	InputState = {};
+	PreviousInputState = {};
+
 	Mesh testMesh = Mesh();
 	testMesh.LoadMeshFromFile("Astronaut2.obj");
 	WNDCLASSEXA windowClass = {};
 
 	//win32_window_dimension dimensions = Win32GetWindowDimension(window);
-	Win32ResizeDIBSection(&GlobalBackBuffer, 1920, 1080);
+	Win32ResizeDIBSection(&renderContext, 1920, 1080);
 
 	windowClass.cbSize = sizeof(WNDCLASSEX);
 	windowClass.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
@@ -486,61 +559,18 @@ int WINAPI WinMain(HINSTANCE instance,
 		QueryPerformanceCounter(&GameStartTime);
 
 
-		matView.m[0][0] = 1.0f;
-		matView.m[1][1] = 1.0f;
-		matView.m[2][2] = 1.0f;
-		matView.m[3][3] = 1.0f;
-		matView.m[3][0] = -camera.x;
-		matView.m[3][1] = -camera.y;
-		matView.m[3][2] = -camera.z;
+		renderContext.view.m[0][0] = 1.0f;
+		renderContext.view.m[1][1] = 1.0f;
+		renderContext.view.m[2][2] = 1.0f;
+		renderContext.view.m[3][3] = 1.0f;
+		renderContext.view.m[3][0] = -renderContext.cameraPosition.x;
+		renderContext.view.m[3][1] = -renderContext.cameraPosition.y;
+		renderContext.view.m[3][2] = -renderContext.cameraPosition.z;
 
-		uint32_t pcThreadCount = std::thread::hardware_concurrency();
-		renderThreadCount = 1;
-		renderThreadCount = pcThreadCount - 1;
-		if (renderThreadCount <= 0)
-		{
-			renderThreadCount = 1;
-		}
-		float oneOverRenderThreadCount = 1.0f / renderThreadCount;
-
-		preAllocatedPairs = new Pair * [renderThreadCount * 3];
-		for (int i = 0; i < renderThreadCount * 3; ++i)
+		preAllocatedPairs = new Pair * [3];
+		for (int i = 0; i < 3; ++i)
 		{
 			preAllocatedPairs[i] = new Pair();
-		}
-
-		threads = new std::thread * [renderThreadCount];
-
-		threadGoFlags = new std::atomic<bool>[renderThreadCount];
-		threadDoneFlags = new std::atomic<bool>[renderThreadCount];
-		for (int i = 0; i < renderThreadCount; ++i)
-		{
-			threadGoFlags[i] = false;
-			threadDoneFlags[i] = false;
-
-			threads[i] = new std::thread([&, i]()
-			{
-				while (rendering)
-				{
-					std::unique_lock<std::mutex> lock(frameMutex);
-					frameCond.wait(lock, [&] { return threadGoFlags[i].load() || !rendering; });
-					lock.unlock();
-
-					if (!rendering) break;
-
-					// Work slice for this thread
-					int start = i * testMesh.triangles.size() * oneOverRenderThreadCount;
-					int end = (i + 1) * testMesh.triangles.size() * oneOverRenderThreadCount;
-
-					for (int j = start; j < end; ++j)
-					{
-						DrawTriangleFromMesh(testMesh.triangles[j], testMesh.matRotX, testMesh.matRotZ, &GlobalBackBuffer, i);
-					}
-
-					threadGoFlags[i] = false;
-					threadDoneFlags[i] = true;
-				}
-			});
 		}
 
 		char logBuffer[1024];
@@ -559,39 +589,74 @@ int WINAPI WinMain(HINSTANCE instance,
 			LARGE_INTEGER frameEnd;
 			while (GlobalRunning)
 			{
-				DeltaTime = 33.0 / 1000.0f;
+				DeltaTime = 33.0f / 1000.0f;
 				QueryPerformanceCounter(&frameStart);
 				GameRunTime = DiffTimeMS(GameStartTime, frameStart);
+
+				PreviousInputState = InputState;
+				InputState = {};
+				//memset(renderCommandBuffer.data, 0, renderCommandBuffer.capaity);
+				renderCommandBuffer.size = 0;
 
 				while (PeekMessage(&message, window, 0, 0, PM_REMOVE))
 				{
 					TranslateMessage(&message);
 					DispatchMessageA(&message);
 				}
-
+				
+				if (InputState.keys[VK_UP])
+				{
+					renderContext.cameraPosition.z += 0.1f;
+				}
+				if (InputState.keys[VK_DOWN])
+				{
+					renderContext.cameraPosition.z -= 0.1f;
+				}
+				if (InputState.keys[VK_LEFT])
+				{
+					renderContext.cameraPosition.x -= 0.1f;
+				}
+				if (InputState.keys[VK_RIGHT])
+				{
+					renderContext.cameraPosition.x += 0.1f;
+				}
+				if (InputState.keys['Q'])
+				{
+					renderContext.cameraPosition.y += 0.1f;
+				}
+				if (InputState.keys['E'])
+				{
+					renderContext.cameraPosition.y -= 0.1f;
+				}
+					
 				//Projection Matrix
 				float fNear = 0.1f;
 				float fFar = 1000.0f;
 				float fov = 90.0f;
-				float aspectRation = (float)GlobalBackBuffer.height / (float)GlobalBackBuffer.width;
+				float aspectRation = (float)renderContext.backbuffer->height / (float)renderContext.backbuffer->width;
 				float fovRad = 1.0f / tanf(fov * .5f / 180.0f * 3.14159f);
 
-				matProj.m[0][0] = aspectRation * fovRad;
-				matProj.m[1][1] = fovRad;
-				matProj.m[2][2] = fFar / (fFar - fNear);
-				matProj.m[3][2] = (-fFar * fNear) / (fFar - fNear);
-				matProj.m[2][3] = 1.0f;
-				matProj.m[3][3] = 0.0f;
+				renderContext.proj.m[0][0] = aspectRation * fovRad;
+				renderContext.proj.m[1][1] = fovRad;
+				renderContext.proj.m[2][2] = fFar / (fFar - fNear);
+				renderContext.proj.m[3][2] = (-fFar * fNear) / (fFar - fNear);
+				renderContext.proj.m[2][3] = 1.0f;
+				renderContext.proj.m[3][3] = 0.0f;
 
-				//camera.z += DeltaTime/5.0f;
-				//camera.x -= DeltaTime;
-				matView.m[3][0] = -camera.x;
-				matView.m[3][1] = -camera.y;
-				matView.m[3][2] = -camera.z;
+				renderContext.view.m[3][0] = -renderContext.cameraPosition.x;
+				renderContext.view.m[3][1] = -renderContext.cameraPosition.y;
+				renderContext.view.m[3][2] = -renderContext.cameraPosition.z;
 
-				//Redraw the screen black!
-				FillScreen();
-				DrawMesh(&testMesh, &GlobalBackBuffer);
+				static float fTheta = 0.0f;
+				fTheta += DeltaTime * 0.25f;
+
+				mat4x4 rotZ = MakeRotationZ(fTheta);
+				mat4x4 rotX = MakeRotationX(fTheta * 0.5f);
+				mat4x4 model = Multiply(rotZ, rotX);
+
+				PushClear(&renderCommandBuffer, 0x000000);
+				PushMesh(&renderCommandBuffer, &testMesh, model);
+				Renderer_Execute(&renderContext, &renderCommandBuffer);
 				
 				if (xOffset >= 1278) xOffset = 0;
 				if (yOffset >= 718) yOffset = 0;
@@ -602,25 +667,25 @@ int WINAPI WinMain(HINSTANCE instance,
 				
 				QueryPerformanceCounter(&framePreRenderEnd);
 				
-				double frameTime = DiffTimeMS(frameStart, framePreRenderEnd);
-				if (frameTime < 33)
+				float frameTime = DiffTimeMS(frameStart, framePreRenderEnd);
+				if (frameTime < 33.0f)
 				{
 
-					double excessFrameTime = 33 - DiffTimeMS(frameStart, framePreRenderEnd);
-					sprintf_s(buffer, sizeof(buffer), "Excess frame time: %.02f ms/f s\n", excessFrameTime);
-					OutputDebugStringA(buffer);
+					float excessFrameTime = 33.0f - DiffTimeMS(frameStart, framePreRenderEnd);
+					sprintf_s(buffer, sizeof(buffer), "Excess frame time: %.02f ms s\n", excessFrameTime);
+					//OutputDebugStringA(buffer);
 
-					Sleep((33 - frameTime));
+					Sleep(excessFrameTime);
 				}
-				Win32CopyBufferToWindow(deviceContext,
-					dimensions.width, dimensions.height,
-					&GlobalBackBuffer);
-
 				QueryPerformanceCounter(&frameEnd);
 
-				//double msPerFrame = DiffTimeMS(frameStart, frameEnd);
-				//sprintf_s(buffer, sizeof(buffer), "Elapsed time: %.02f ms/f s\n", msPerFrame);
-				//OutputDebugStringA(buffer);
+				float msPerFrame = DiffTimeMS(frameStart, frameEnd);
+				sprintf_s(buffer, sizeof(buffer), "Elapsed time: %.02f ms/f s\n", msPerFrame);
+				OutputDebugStringA(buffer);
+
+				Win32CopyBufferToWindow(deviceContext,
+					dimensions.width, dimensions.height,
+					&renderContext);
 
 			}
 		}
@@ -643,13 +708,13 @@ int WINAPI WinMain(HINSTANCE instance,
 internal void 
 Win32CopyBufferToWindow(HDC deviceContext,
 	int windowWidth, int windowHeight,
-	win32_offscreen_buffer *buffer)
+	Renderer *renderContext)
 {
 	StretchDIBits(deviceContext,
 		0, 0, windowWidth, windowHeight,
-		0, 0, buffer->width, buffer->height,
-		buffer->memory,
-		&buffer->Info,
+		0, 0, renderContext->backbuffer->width, renderContext->backbuffer->height,
+		renderContext->backbuffer->memory,
+		&renderContext->backbuffer->Info,
 		DIB_RGB_COLORS, SRCCOPY);
 }
 
@@ -669,28 +734,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     switch (message)
     {
 	case WM_KEYDOWN:
-		switch (wParam)
-		{
-		case VK_UP:
-			camera.z += 0.1f;  // Move forward
-			break;
-		case VK_DOWN:
-			camera.z -= 0.1f;  // Move backward
-			break;
-		case VK_LEFT:
-			camera.x -= 0.1f;  // Strafe left
-			break;
-		case VK_RIGHT:
-			camera.x += 0.1f;  // Strafe right
-			break;
-		case 'Q':
-			camera.y += 0.1f;  // Move up
-			break;
-		case 'E':
-			camera.y -= 0.1f;  // Move down
-			break;
-		}
-		break;
+		InputState.keys[wParam] = true;
     case WM_PAINT:
         {
             PAINTSTRUCT ps;
@@ -701,7 +745,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			int width = ps.rcPaint.right - ps.rcPaint.left;
 
 			win32_window_dimension dimensions = Win32GetWindowDimension(hWnd);
-			Win32CopyBufferToWindow(hdc, width, height, &GlobalBackBuffer);
+			//Win32CopyBufferToWindow(hdc, width, height, &renderContext);
 
             EndPaint(hWnd, &ps);
         }
