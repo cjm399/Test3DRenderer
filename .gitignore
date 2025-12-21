@@ -3,3 +3,6 @@ x64/
 .vs/
 Test3dRenderer/Debug/
 Test3dRenderer/x64/
+Test3dRenderer/*.vcxproj
+Test3dRenderer/*.vcxproj.user
+**.zip
