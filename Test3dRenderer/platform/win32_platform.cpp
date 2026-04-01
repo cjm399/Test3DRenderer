@@ -1,5 +1,7 @@
 #include "win32_platform.h"
 #include <timeapi.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "../core/sp_intrinsics.h"
 #include "../core/mesh.h"
@@ -74,22 +76,95 @@ Win32ResizeDIBSection(win32_offscreen_buffer* _win32bb,
 }
 
 
-/*internal void WindowGradient(win32_offscreen_buffer* buffer, uint8_t xOffset, uint8_t yOffset)
+platform_file_result Win32ReadEntireFile(const char* filename)
 {
-	uint8_t* row = (uint8_t*)buffer->memory;
-	for (int Y = 0; Y < buffer->height; Y++)
+	platform_file_result result = {};
+	HANDLE file = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ,
+		0, OPEN_EXISTING, 0, 0);
+
+	if (file == INVALID_HANDLE_VALUE)
 	{
-		uint32_t* pixel = (uint32_t*)row;
-		for (int X = 0; X < buffer->width; X++)
-		{
-			uint8_t red = 255;
-			uint8_t green = X + xOffset;
-			uint8_t blue = Y + yOffset;
-			*pixel++ = (((red << 16) | (green << 8)) | blue);
-		}
-		row += buffer->pitch;
+		OutputDebugStringA("Failed Open file handle!");
+		result.data = nullptr;
+		result.size = 0;
+		return result;
 	}
-}*/
+
+	// Good file handle
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(file, &fileSize) || fileSize.QuadPart == 0 ||
+		fileSize.QuadPart > (LONGLONG)UINT32_MAX)
+	{
+		CloseHandle(file);
+		return result;
+	}
+
+	DWORD bytesToRead = (DWORD)fileSize.QuadPart;
+	result.data = VirtualAlloc(0, bytesToRead, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+	if(!result.data)
+	{
+		OutputDebugStringA("Failed to VirtualAlloc!");
+		CloseHandle(file);
+		result.data = nullptr;
+		result.size = 0;
+		return result;
+	}
+	
+	// Good allocation
+	DWORD bytesRead = 0;
+	if (
+		!ReadFile(file, result.data, bytesToRead, &bytesRead, 0) 
+		|| bytesRead != bytesToRead
+	)
+	{
+		OutputDebugStringA("Failed to read file!");
+		CloseHandle(file);
+		result.data = nullptr;
+		result.size = 0;
+		return result;
+	}
+
+	// Good read of file
+	result.size = bytesRead;
+	CloseHandle(file);
+	return result;
+}
+
+platform_file_result Win32ReadEntireLocalFile(const char* relativePath)
+{
+	platform_file_result result = {};
+	if (!relativePath || !relativePath[0])
+		return result;
+	if (relativePath[0] == '\\' || relativePath[0] == '/')
+		return result;
+
+	char dir[MAX_PATH];
+	DWORD n = GetModuleFileNameA(NULL, dir, MAX_PATH);
+	if (n == 0 || n >= MAX_PATH)
+		return result;
+
+	char* slash = strrchr(dir, '\\');
+	if (!slash)
+		slash = strrchr(dir, '/');
+	if (!slash)
+		return result;
+	slash[1] = '\0';
+
+	char full[MAX_PATH];
+	if (sprintf_s(full, "%s%s", dir, relativePath) < 0)
+		return result;
+
+	return Win32ReadEntireFile(full);
+}
+
+void Win32FreeFileMemory(void* _memory)
+{
+	if(_memory)
+	{
+		VirtualFree(_memory, 0, MEM_RELEASE);
+	}
+}
+
 
 int WINAPI WinMain(HINSTANCE instance,
 	HINSTANCE previousInstance,
@@ -97,6 +172,11 @@ int WINAPI WinMain(HINSTANCE instance,
 	int showCode)
 
 {	
+	platform_api platformAPI = {};
+	platformAPI.ReadEntireFile = Win32ReadEntireFile;
+	platformAPI.ReadEntireLocalFile = Win32ReadEntireLocalFile;
+	platformAPI.FreeFileMemory = Win32FreeFileMemory;
+
 	GlobalBackBuffer = win32_offscreen_buffer{};
 	GlobalBackBuffer.buffer = backbuffer{};
 	InputState = {};
@@ -139,8 +219,6 @@ int WINAPI WinMain(HINSTANCE instance,
 		QueryPerformanceCounter(&GameStartTime);
 
 
-		char logBuffer[1024];
-
 		if (window)
 		{
 			HDC deviceContext = GetDC(window);
@@ -158,7 +236,7 @@ int WINAPI WinMain(HINSTANCE instance,
 			platformData.backBuffer = &GlobalBackBuffer.buffer;
 			platformData.platformInput = &InputState;
 
-			Init(platformData);
+			Init(platformData, platformAPI);
 
 			while (GlobalRunning)
 			{
@@ -192,7 +270,7 @@ int WINAPI WinMain(HINSTANCE instance,
 					sprintf_s(buffer, sizeof(buffer), "Excess frame time: %.02f ms s\n", excessFrameTime);
 					OutputDebugStringA(buffer);
 
-					Sleep(excessFrameTime);
+					Sleep((DWORD)(excessFrameTime + 0.5f));
 				}
 				QueryPerformanceCounter(&frameEnd);
 
@@ -251,6 +329,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 	case WM_KEYDOWN:
 		InputState.keys[wParam] = true;
+		break;
 	case WM_PAINT:
 	{
 		PAINTSTRUCT ps;

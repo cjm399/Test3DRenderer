@@ -18,6 +18,25 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="assets\obj_loader.cpp" />
+    <ClCompile Include="game\game.cpp" />
+    <ClCompile Include="platform\platform.cpp" />
+    <ClCompile Include="platform\win32_platform.cpp" />
+    <ClCompile Include="renderer\renderer.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="assets\obj_loader.h" />
+    <ClInclude Include="core\core.h" />
+    <ClInclude Include="core\mesh.h" />
+    <ClInclude Include="core\sp_intrinsics.h" />
+    <ClInclude Include="core\types.h" />
+    <ClInclude Include="game\game.h" />
+    <ClInclude Include="platform\platform.h" />
+    <ClInclude Include="platform\win32_platform.h" />
+    <ClInclude Include="renderer\renderer.h" />
+    <ClInclude Include="renderer\render_commands.h" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
     <ProjectGuid>{0F4FD842-E2E0-4087-A1EB-D251B48C00B6}</ProjectGuid>

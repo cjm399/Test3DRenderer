@@ -94,9 +94,9 @@ void DrawTriangleFromMesh(
 	MultiplyMatrixVector(triTranslated.points[2], triView.points[2], renderContext->view);
 
 	// view -> projection
-	MultiplyMatrixVector(triView.points[0], triProjected.points[0], renderContext->proj);
-	MultiplyMatrixVector(triView.points[1], triProjected.points[1], renderContext->proj);
-	MultiplyMatrixVector(triView.points[2], triProjected.points[2], renderContext->proj);
+	//MultiplyMatrixVector(triView.points[0], triProjected.points[0], renderContext->proj);
+	//MultiplyMatrixVector(triView.points[1], triProjected.points[1], renderContext->proj);
+	//MultiplyMatrixVector(triView.points[2], triProjected.points[2], renderContext->proj);
 
 	if (triView.points[0].z <= 0.1f ||
 		triView.points[1].z <= 0.1f ||

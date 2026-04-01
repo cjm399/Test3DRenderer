@@ -1,12 +1,15 @@
 #include "game.h"
+#include "../assets/obj_loader.h"
 #include "../renderer/render_commands.h"
 
 Renderer ScreenRenderer;
 RenderCommandBuffer renderCommandBuffer;
 Mesh testMesh;
+platform_api PlatformAPI;
 
-void Init(platform_data& _platformData)
+void Init(platform_data& _platformData, platform_api _platformAPI)
 {
+	PlatformAPI = _platformAPI;
 	renderCommandBuffer = RenderCommandBuffer{};
 	renderCommandBuffer.data = (uint8_t*)malloc((1024 * 1024));
 	renderCommandBuffer.capaity = 1024 * 1024;
@@ -16,7 +19,15 @@ void Init(platform_data& _platformData)
 	Init(&ScreenRenderer);
 
 	testMesh = Mesh();
-	testMesh.LoadMeshFromFile("Astronaut2.obj");
+	// Prefer path next to .exe so cwd does not matter; fall back to cwd-relative name.
+	platform_file_result fileData = {};
+	fileData = _platformAPI.ReadEntireLocalFile("Astronaut.obj");
+
+	if (fileData.data && fileData.size > 0)
+	{
+		LoadMeshFromObjMemory(fileData.data, fileData.size, &testMesh);
+		PlatformAPI.FreeFileMemory(fileData.data);
+	}
 }
 
 void game_update_and_render(platform_data& _platformData)

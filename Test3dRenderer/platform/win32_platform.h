@@ -4,6 +4,8 @@
 
 #define MAX_LOADSTRING 100
 
+void Win32FreeFileMemory(void* _memory);
+
 struct win32_offscreen_buffer
 {
     backbuffer buffer; // <-- shared layout
